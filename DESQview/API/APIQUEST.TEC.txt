@@ -1,0 +1,338 @@
+ID:AQ DESQview API: Most Common Questions
+Quarterdeck Technical Note #119                       Filename: APIQUEST.TEC
+by Quarterdeck Developer Support                    CompuServe: APIQUE.ZIP
+Last revised:  3/19/93                                Category: API
+
+Subject: The ten most commonly asked questions by users of the DESQview
+         Application Program Interface (API).
+
+
+1. THE CURSOR DOESN'T MOVE OR IT SITS IN THE UPPER RIGHT HAND CORNER:  WHAT
+COULD BE WRONG?  or, I GET VIDEO CORRUPTION WHEN WRITING STRINGS OUT FROM MY
+API PROGRAM; IS THIS RELATED?
+
+API programs should always have the "Writes Text Directly to Screen",
+"Displays Graphics Information" and "Virtualize Text/Graphics" fields of their
+DVP's (PIF) all set to NO.
+
+The problems resulting from setting these fields to values other than NO can
+vary.  The most typical effect is the cursor not moving when text is being
+typed.  Another more extreme problem might be seen when text strings sent from
+an API application to a window become garbled.  These fields are the first
+things to check when you experience problems with an API application.
+
+-----------------------------------------------------------------------------
+
+2.  WHEN I TRY TO REASSEMBLE API1.ASM WITH BORLAND'S TASM I GET A LOT OF
+ERRORS.
+
+API1.ASM was written more with MASM in mind.  You can get API1.ASM to assemble
+by using the TASM parameters /JQUIRKS (which allows for some of the quirks
+that MASM has) and /MX (which eliminates many of the problems with case
+sensitivity on global symbols.)  An example of this would be:
+
+     tasm /jquirks /mx api1.asm
+
+This will result in 7 warnings but will produce a usable API1.OBJ.
+
+------------------------------------------------------------------------------
+
+3.  HOW DO THE API FUNCTIONS FOR PUSHKEY AND PUTKEY WORK?
+
+The API direct calls of PUSHKEY and PUTKEY seem to be difficult for some users
+of the DESQview API.  These functions are simple and require only a few things
+to be kept in mind in order to work:
+
+    * The keys that are sent will be in HEX.  These codes are listed on pages
+213-214 of the API manual.  All of the standard and extended keys are listed.
+
+    * The "DESQ" key's scan/key code is FC00h.  CTRL-ALT-DEL is FE00h.
+
+    * Scripts can NOT be played back by using the PUTKEY function, but they
+WILL be played back with the PUSHKEY function.
+
+    * When using PUSHKEY, if you have several keys to push they must be pushed
+in the opposite order that you want them seen.  Use API_BEGINC and API_ENDC,
+which will create an uninterrupted "critical region", to insure that they do
+not get out of order.  API_PUTKEY does not require the use of critical regions
+or opposite ordering of the keys to be "put".
+
+Following is a C program that shows the proper setup/execution of
+PUSHKEY/PUTKEY.
+
+Note:  when using Clipper with the DESQview API you must use the
+Clipper/DESQview API function API_DEC to convert the hex number to decimal.
+Use the following lines as replacements to the C function lines for similar
+functionality:
+
+ *Begin Clipper specific routine
+     keyout = api_dec("FC00")
+     api_putkey (tsk_me(),keyout)
+ *End Clipper specific routine
+
+
+/* PUT/PUSHKEY using the DESQview API */
+#include <stdio.h>
+#include "dvapi.h"
+
+#define REQUIRED 0x200 + 23
+
+int  version;
+main () {
+  version = api_init();
+  if (version < REQUIRED) {
+    printf ("This program requires DESQview version %d.%02d or
+later.\n",
+             REQUIRED/256,REQUIRED%256);
+    }
+  else {
+   api_level (REQUIRED);
+
+   api_beginc();         /* Note the critical section.           */
+   api_pushkey (0x184F); /* Oposite ordering will produce        */
+   api_pushkey (0xfc00); /* the DESQ key then the letter O       */
+   api_endc();           /* Be sure to end the critical section! */
+
+   api_putkey (win_me(),0x184F); /* Supply api_putkey with the   */
+ /* window handle and the key scan code/character code.          */
+ /* In this case we use the api function  win_me() to supply     */
+ /* api_putkey with the name of the window this program will be  */
+ /* running in, as opposed to another applications window        */
+       }
+  api_exit();
+ }
+
+------------------------------------------------------------------------------
+
+4.  HOW CAN I TELL IF OTHER TASKS ARE RUNNING?
+
+The best approach to check and see if other tasks are running is to write an
+XDI (External Device Interface) driver and keep track of a task's creation and
+termination.  For further information on the XDI interface to DESQview, you
+can consult the DESQview API Reference manual; or for a general overview,
+obtain the XDI.TEC technote from Quarterdeck Office Systems.
+
+-------------------------------------------------------------------------------
+
+5.  HOW ARE HARDWARE INTERRUPTS HANDLED UNDER DESQVIEW?
+
+If the interrupt is requested and interrupts are enabled then the following
+things must be true for the interrupt to happen:
+
+     * This particular interrupt must not be masked out.
+     * No interrupt of higher priority is in service at the time.
+
+DESQview installs its own handler (called the DV Diverted handler) for all
+hardware interrupts except for the timer interrupt which is undiverted by DV.
+DV's handler switches onto an internal stack, determines which task should be
+given the interrupt, then sets up that task's map and SOME of its state, and
+calls the task's handler.  The window's handler (if present) may usurp the
+interrupt or preprocess it and pass it along or pass it along and postprocess
+it.
+
+DV passes along the timer interrupt to the currently executing window and then
+does post processing (including time slicing).
+
+The handler in place before DESQview may be a TSR or device driver, a DOS
+stack or the BIOS, or a combination of any of the above.
+
+DESQview gets ALL the hardware interrupts before any application loaded within
+DESQview.  DESQview accomplishes this by programming the 8259A Programmable
+Interrupt Controller (PIC) so that all hardware interrupts are diverted to a
+different set of interrupt vectors.  When a hardware interrupt occurs,
+DESQview will receive the interrupt.  It will then determine which process
+hooked that interrupt and map it in.  It will then switch to an internal stack
+and pass control to that process's handler.  DESQview switches stacks because
+the process that is being interrupted may have a small stack.  DESQview's
+stack is fairly large so you should not have stack space problems in your
+handler.  However, if your handler uses more than 100 bytes of stack space you
+should switch to your own stack.
+
+------------------------------------------------------------------------------
+
+6.  CAN I MAKE DESQVIEW API CALLS IN MY DOS EXTENDED PROGRAM?
+
+Typically this is not possible.  DESQview's API calls must be made in real
+mode at this time.  Since using a DOS extender puts the machine in protected
+mode the API calls will not work.  Some DOS extenders include functions that
+let you make real mode calls from within your DOS extended program, but you
+will have to refer to your documentation for this procedure, and it is
+unsupported by Quarterdeck Developer Support at this time.
+
+--------------------------------------------------------------------------
+
+7.  WHAT ARE THE FOUR LEVELS OF PROTECTION UNDER DESQVIEW, AND WHAT ARE THEIR
+EFFECTS?
+
+0 - none
+
+1 - DESQview watches to see if a program has locked interrupts for a long time
+and notifies the user.  It entails no performance loss and only 1/2K memory
+hit (from system memory), but only works on the PS/2 Model 80 and Compaq
+machines.
+
+2 - DESQview watches to see if a program writes to memory outside its region
+and posts a message.  DESQview doesn't spot programs that do jumps to
+different regions.  This option is fairly effective but will probably affect
+performance noticeably.
+
+3 - DESQview gets in the way of everything to check if a program even does a
+jump to another region.  Some programs won't even run under this burden
+(especially well-behaved ones that make calls to DOS and the BIOS), and
+performance will be impeded, but it should be pretty safe, barring TSR
+problems.  Performance degrades greatly.
+
+------------------------------------------------------------------------------
+
+8.  CAN I USE CRITICAL REGIONS TO LOCK OUT MULTITASKING?
+
+Yes, but there are some things that you should try to avoid.  The critical
+section should only be a few instructions long and avoid loops that would lock
+out multitasking for an unreasonable amount of time.  You should also note the
+fact that interrupts are not received by the other processes that are running
+and thus could result in loss of information, or, worse, system lockup if the
+critical region is too large.
+
+------------------------------------------------------------------------------
+
+9.  WHAT ARE THE CURRENT VERSIONS OF THE APIS?
+
+ Product                Codes       Version
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ API C Library          API-C-LIB   1.30
+  W/Reference           API-REF/C   1.30
+  Toolkit               API-C-TKT   1.30
+
+ API Pascal Library     API-P-LIB   1.10
+  W/Reference           API-REF/P   1.10
+  Toolkit               API-P-TKT   1.30
+
+ API Clipper Library    API-L-LIB   1.01
+  W/Reference           API-REF/L   1.01
+  Toolkit               API-L-TKT   1.01
+
+ API Basic Library      API-B-LIB   1.01
+  W/Reference           API-REF/B   1.01
+  Toolkit               API-B-TKT   1.01
+
+ API Dbase Library      API-D-LIB   1.00
+  W/Reference           API-REF/D   1.00
+  Toolkit               API-D-TKT   1.00
+
+ API Reference Manual   API-REF     1.20
+ API Panel Designer     API-PANEL   1.01
+ API Debugger           API-DEBUG   1.10
+
+
+------------------------------------------------------------------------------
+
+10.  HOW CAN I READ THE TEXT SCREEN OF ANOTHER APPLICATION?
+
+This is possible if you place an asterisk in the 'shared program pathname'
+field of all of the DVPs associated with the call to read the screen.  A C
+example of how this is possible is given below:
+
+ /*A simple example showing the use of DESQview's API win_read() function *
+Note: make sure to place an asterisk in the 'shared program pathname' field *
+of any of the DVPs associated with the win_read(); i.e., if program 'A' * will
+be reading the window of programs 'B' and 'C', place an asterisk in all *
+three DVPs of all three programs. */
+
+
+#include <stdio.h>
+#include "dvapi.h"
+
+#define required 0x21a     // DESQview 2.26 required
+
+void main (int argc, char *argv[]);
+int readpif (char *fname, char *buffer, unsigned size);
+
+      pifbuf[500];
+
+     char *buffer;
+     int   buflng;
+     int  i     ;
+
+void main (int argc, char *argv[])
+{
+   ulong apphan;
+
+   uint  tot,
+         avail,
+         lrg;
+
+   int version = api_init();
+   if(version < required)
+   {
+      printf("\n\nThis Program Requires DESQview Version %d.%02d or Later To
+Run!\n\n",\
+      required/256,required%256);
+      exit(1);
+   }
+   else
+   {
+      api_level(required);
+      if (argc > 2)
+      {
+         strupr(argv[2]);
+      }
+
+      if(!readpif(argv[1],pifbuf,416))
+      {
+         printf("\nERROR: Bad Or Missing %s.\n",argv[1]);
+         api_exit();
+         exit(1);
+      }
+
+      apphan = app_start(pifbuf,416);
+      if (!apphan)
+      {
+         printf("\n\nError Starting Application.\n\n");
+         api_exit();
+         exit(1);
+      }
+      else
+      {
+
+     api_pause();
+          api_pause();
+          api_pause();
+          api_pause();
+
+        win_cursor(apphan,0,0);
+
+        for (i; i <= 25;i++)
+               {
+
+                win_cursor(apphan,1,0);
+
+                win_read(apphan,&buffer,&buflng);
+                win_printf(win_me(),"%s  %d",buffer,buflng);
+               }
+
+          printf("\n\nApplication Started. Process ID:%lu\n\n",apphan);
+      }
+      api_exit();
+      exit(0);
+   }
+}
+
+int readpif (char *fname, char *buffer, unsigned size)
+{
+     FILE *handle;
+     if ((handle = fopen(fname,"rb")) == 0)
+          return 0;
+
+     if (fread (buffer, size, 1, handle) != 1)
+          return 0;
+
+     fclose (handle);
+     return 1;
+}
+
+  ************************************************************************
+  *          Trademarks are property of their respective owners.         *
+  *This technical note may be copied and distributed freely as long as it*
+  *is distributed in its entirety and it is not distributed for profit.  *
+  *          Copyright (C) 1992 by Quarterdeck Office Systems            *
+  ************************ E N D   O F   F I L E *************************
